@@ -1,7 +1,7 @@
 require 'time'
 
 module Venice
-  class Receipt
+  class InAppPurchase
     # The number of items purchased. This value corresponds to the quantity property of the SKPayment object stored in the transaction’s payment property.
     attr_reader :quantity
 
@@ -14,6 +14,23 @@ module Venice
     # The date and time this transaction occurred. This value corresponds to the transaction’s transactionDate property.
     attr_reader :purchase_date
 
+    # For a transaction that restores a previous transaction, this is the purchase date from the original receipt
+    attr_reader :original_purchase_date
+
+    attr_reader :is_trial_period
+
+    def initialize(attributes = {})
+      @quantity = Integer(attributes['quantity']) if attributes['quantity']
+      @product_id = attributes['product_id']
+      @transaction_id = attributes['transaction_id']
+      @purchase_date = DateTime.parse(attributes['purchase_date']) if attributes['purchase_date']
+      @original_purchase_date = DateTime.parse(attributes['original_purchase_date']) if attributes['original_purchase_date']
+      @is_trial_period = (attributes['is_trial_period'] == "true") if attributes['is_trial_period']
+    end
+
+  end
+
+  class Receipt
     # A string that the App Store uses to uniquely identify the application that created the payment transaction. If your server supports multiple applications, you can use this value to differentiate between them. Applications that are executing in the sandbox do not yet have an app-item-id assigned to them, so this key is missing from receipts created by the sandbox.
     attr_reader :app_item_id
 
@@ -21,7 +38,20 @@ module Venice
     attr_reader :version_external_identifier
 
     # The bundle identifier for the application.
-    attr_reader :bid
+    attr_reader :bundle_id
+
+    # fields appearing in receipt (we should figure out what they mean)
+    attr_reader :adam_id
+
+    attr_reader :receipt_type
+
+    attr_reader :download_id
+
+    attr_reader :application_version
+
+    attr_reader :request_date
+
+    attr_reader :original_purchase_date
 
     # A version number for the application.
     attr_reader :bvrs
@@ -38,15 +68,28 @@ module Venice
     # For auto-renewable subscriptions, returns the date the subscription will expire
     attr_reader :expires_at
 
+    # In-app receipts
+    attr_reader :in_app
+
     def initialize(attributes = {})
-      @quantity = Integer(attributes['quantity']) if attributes['quantity']
-      @product_id = attributes['product_id']
-      @transaction_id = attributes['transaction_id']
-      @purchase_date = DateTime.parse(attributes['purchase_date']) if attributes['purchase_date']
       @app_item_id = attributes['app_item_id']
       @version_external_identifier = attributes['version_external_identifier']
-      @bid = attributes['bid']
       @bvrs = attributes['bvrs']
+      @bundle_id = attributes['bundle_id']
+      @adam_id = attributes['adam_id']
+      @receipt_type = attributes['receipt_type']
+      @download_id = attributes['download_id']
+      @application_version = attributes['application_version']
+      @request_date = attributes['request_date']
+      @original_purchase_date = attributes['original_purchase_date']
+
+      @in_app = []
+      if attributes['in_app']
+        attributes['in_app'].each do |purchase_attributes|
+          purchase = InAppPurchase.new(purchase_attributes)
+          @in_app << purchase
+        end
+      end
 
       # expires_date is in ms since the Epoch, Time.at expects seconds
       @expires_at = Time.at(attributes['expires_date'].to_i / 1000) if attributes['expires_date']
@@ -83,7 +126,7 @@ module Venice
 
     class << self
       def verify(data, options = {})
-        verify!(data, options) rescue false
+        verify!(data, options)
       end
 
       def verify!(data, options = {})
@@ -100,6 +143,7 @@ module Venice
             client = Client.production
             retry
           else
+            print "error=" + error.to_s
             raise error
           end
         end
